@@ -1,0 +1,11 @@
+Murali Kedarisetty
+muralidharkedarisetty@gmail.com
+
+Describe your daily tasks and workload below, in your own words.
+Replace these example lines with what you actually do each day:
+
+- Built and maintained Python backend services with FastAPI and PostgreSQL
+- Wrote SQL queries and pandas pipelines to analyze product data
+- Deployed services with Docker on AWS, monitored and fixed production issues
+- Integrated OpenAI LLM APIs for text summarization features
+- Reviewed pull requests and mentored two junior developers

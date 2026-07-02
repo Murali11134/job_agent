@@ -1,0 +1,48 @@
+name: Daily job run
+
+on:
+  schedule:
+    # 02:30 UTC = 08:00 IST — adjust to your morning.
+    - cron: "30 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Restore job database (24h dedupe memory)
+        uses: actions/cache@v4
+        with:
+          path: job_agent.db
+          key: job-db-${{ github.run_id }}
+          restore-keys: job-db-
+      - name: Build profile if missing
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ ! -f profile.json ]; then python main.py build-profile; fi
+      - name: Daily run
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          DIGEST_TO: ${{ secrets.DIGEST_TO }}
+        run: python main.py run
+      - name: Upload digest and application packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-output-${{ github.run_id }}
+          path: |
+            digests/
+            applications/

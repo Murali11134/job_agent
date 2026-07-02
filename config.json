@@ -1,0 +1,10 @@
+{
+  "keywords": "python developer",
+  "location": "India",
+  "sources": ["linkedin", "naukri", "iimjobs", "cutshort"],
+  "min_jobs_per_day": 10,
+  "limit_per_source": 25,
+  "score_threshold": 35.0,
+  "dedupe_hours": 24,
+  "model": "gpt-4.1-mini"
+}

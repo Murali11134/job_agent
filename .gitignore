@@ -1,2 +1,7 @@
 __pycache__/
 *.pyc
+job_agent.db
+profile.json
+master_resume.txt
+applications/
+digests/
