@@ -43,7 +43,10 @@ DUMMY_JOBS: List[Job] = [
 
 
 def scrape_jobs(search: str = "", limit: int = 10) -> List[Job]:
-    """Return dummy jobs with optional keyword filtering."""
+    """Return dummy jobs with optional keyword filtering.
+
+    A non-positive ``limit`` yields an empty list.
+    """
 
     keyword = search.strip().lower()
     jobs = DUMMY_JOBS
@@ -55,4 +58,4 @@ def scrape_jobs(search: str = "", limit: int = 10) -> List[Job]:
             if keyword in f"{job.title} {job.description} {job.company}".lower()
         ]
 
-    return jobs[: max(1, limit)]
+    return jobs[: max(0, limit)]

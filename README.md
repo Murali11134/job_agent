@@ -6,6 +6,8 @@ Simple modular Python project:
 - `scorer.py`: scores jobs with OpenAI API and falls back to local keyword scoring
 - `main.py`: pipeline to parse resume text, score jobs, and print top matches
 
+Requires Python 3.10+.
+
 ## Install
 ```bash
 pip install -r requirements.txt
@@ -15,4 +17,9 @@ pip install -r requirements.txt
 ```bash
 export OPENAI_API_KEY="your_key"  # optional; fallback works without it
 python main.py --resume ./resume.txt --search python --top 3
+```
+
+## Test
+```bash
+python -m unittest discover -s tests
 ```

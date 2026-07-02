@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass
 from typing import List
 
@@ -15,6 +16,15 @@ class ScoredJob:
     job: Job
     score: float
     reason: str
+
+
+def _extract_json(text: str) -> dict:
+    """Parse a JSON object from model output, tolerating markdown fences."""
+
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if not match:
+        raise ValueError(f"No JSON object found in model output: {text!r}")
+    return json.loads(match.group(0))
 
 
 def _fallback_score(job: Job, resume_text: str) -> ScoredJob:
@@ -73,7 +83,7 @@ def score_jobs_with_openai(
                     {"role": "user", "content": json.dumps(payload)},
                 ],
             )
-            result = json.loads(response.output_text)
+            result = _extract_json(response.output_text)
             scored.append(
                 ScoredJob(
                     job=job,
