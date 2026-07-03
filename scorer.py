@@ -1,4 +1,4 @@
-"""Score jobs against a resume using OpenAI API (with deterministic fallback)."""
+"""Score jobs against a resume using the Anthropic API (with deterministic fallback)."""
 
 from __future__ import annotations
 
@@ -9,6 +9,23 @@ from dataclasses import dataclass
 from typing import List
 
 from scraper import Job
+
+DEFAULT_MODEL = "claude-opus-4-8"
+
+SCORE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "score": {"type": "number", "description": "Match score from 0 to 100"},
+        "reason": {"type": "string", "description": "One-sentence justification"},
+    },
+    "required": ["score", "reason"],
+    "additionalProperties": False,
+}
+
+SYSTEM_PROMPT = (
+    "You are an expert recruiter. Score how well the candidate's resume matches "
+    "the job posting, from 0 (no fit) to 100 (perfect fit)."
+)
 
 
 @dataclass
@@ -40,27 +57,26 @@ def _fallback_score(job: Job, resume_text: str) -> ScoredJob:
     return ScoredJob(job=job, score=score, reason=reason)
 
 
-def score_jobs_with_openai(
+def score_jobs_with_claude(
     jobs: List[Job],
     resume_text: str,
-    model: str = "gpt-4.1-mini",
+    model: str = DEFAULT_MODEL,
 ) -> List[ScoredJob]:
-    """Return jobs scored by OpenAI and sorted descending.
+    """Return jobs scored by Claude and sorted descending.
 
-    Falls back to local keyword scoring if API key/client are unavailable.
+    Falls back to local keyword scoring if the API key is unavailable.
     """
 
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
+    if not os.getenv("ANTHROPIC_API_KEY"):
         return sorted(
             [_fallback_score(job, resume_text) for job in jobs],
             key=lambda item: item.score,
             reverse=True,
         )
 
-    from openai import OpenAI
+    import anthropic
 
-    client = OpenAI(api_key=api_key)
+    client = anthropic.Anthropic()
     scored: List[ScoredJob] = []
 
     for job in jobs:
@@ -69,21 +85,23 @@ def score_jobs_with_openai(
             "job": {
                 "title": job.title,
                 "company": job.company,
-                "description": job.description,
-                "url": job.url,
+                "description": job.description[:4000],
+                "location": job.location,
             },
-            "instruction": "Return ONLY JSON: {\"score\": number 0-100, \"reason\": string}",
         }
 
         try:
-            response = client.responses.create(
+            response = client.messages.create(
                 model=model,
-                input=[
-                    {"role": "system", "content": "You are an expert recruiter."},
-                    {"role": "user", "content": json.dumps(payload)},
-                ],
+                max_tokens=1024,
+                system=SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": json.dumps(payload)}],
+                output_config={"format": {"type": "json_schema", "schema": SCORE_SCHEMA}},
             )
-            result = _extract_json(response.output_text)
+            text = next(
+                block.text for block in response.content if block.type == "text"
+            )
+            result = _extract_json(text)
             scored.append(
                 ScoredJob(
                     job=job,

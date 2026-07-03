@@ -1,7 +1,7 @@
 import unittest
 from unittest import mock
 
-from digest import build_digest, send_email_if_configured
+from digest import build_digest, build_digest_html, send_email_if_configured
 from store import ApplicationRecord
 
 
@@ -42,6 +42,27 @@ class BuildDigestTests(unittest.TestCase):
         )
         self.assertIn("naukri", digest)
         self.assertIn("timeout", digest)
+
+
+class BuildDigestHtmlTests(unittest.TestCase):
+    def test_contains_job_link_and_scores(self):
+        page = build_digest_html("2026-07-02", [_record()], min_jobs=10)
+        self.assertIn("Python Engineer", page)
+        self.assertIn('href="https://example.com/jobs/1"', page)
+        self.assertIn("80/100", page)
+
+    def test_escapes_html_in_job_fields(self):
+        record = _record(title="<script>alert(1)</script>")
+        page = build_digest_html("2026-07-02", [record], min_jobs=1)
+        self.assertNotIn("<script>alert(1)</script>", page)
+        self.assertIn("&lt;script&gt;", page)
+
+    def test_includes_source_warnings(self):
+        page = build_digest_html(
+            "2026-07-02", [_record()], source_errors={"naukri": "timeout"}
+        )
+        self.assertIn("naukri", page)
+        self.assertIn("timeout", page)
 
 
 class SendEmailTests(unittest.TestCase):

@@ -17,10 +17,10 @@ from datetime import date
 from pathlib import Path
 
 from config import Config, load_config
-from digest import build_digest, send_email_if_configured
+from digest import build_digest, build_digest_html, send_email_if_configured
 from resume_builder import ats_check, build_profile, render_resume, tailor_profile
 from resume_parser import parse_resume
-from scorer import score_jobs_with_openai
+from scorer import score_jobs_with_claude
 from scraper import scrape_jobs
 from sources import fetch_all
 from store import JobStore
@@ -53,7 +53,7 @@ def build_parser() -> argparse.ArgumentParser:
     match_cmd.add_argument("--search", default="", help="Keyword filter")
     match_cmd.add_argument("--limit", type=positive_int, default=10)
     match_cmd.add_argument("--top", type=positive_int, default=3)
-    match_cmd.add_argument("--model", default="gpt-4.1-mini")
+    match_cmd.add_argument("--model", default="claude-opus-4-8")
 
     return parser
 
@@ -120,7 +120,7 @@ def cmd_run(args: argparse.Namespace, config: Config) -> None:
         fresh = store.filter_unseen(jobs, within_hours=config.dedupe_hours)
         print(f"{len(fresh)} new (not seen in the last {config.dedupe_hours}h)")
 
-        ranked = score_jobs_with_openai(fresh, resume_text, model=config.model)
+        ranked = score_jobs_with_claude(fresh, resume_text, model=config.model)
         suitable = [item for item in ranked if item.score >= config.score_threshold]
         selected = (
             suitable
@@ -155,6 +155,12 @@ def cmd_run(args: argparse.Namespace, config: Config) -> None:
     digest_path = digest_dir / f"{today}.md"
     digest_path.write_text(digest, encoding="utf-8")
 
+    digest_html = build_digest_html(
+        today, applications, source_errors=errors, min_jobs=config.min_jobs_per_day
+    )
+    (digest_dir / f"{today}.html").write_text(digest_html, encoding="utf-8")
+    (digest_dir / "latest.html").write_text(digest_html, encoding="utf-8")
+
     sent = send_email_if_configured(f"Job digest {today}", digest)
     print(f"Prepared {len(selected)} application package(s) in {out_dir}")
     print(f"Digest written to {digest_path}" + (" and emailed" if sent else ""))
@@ -172,7 +178,7 @@ def cmd_match(args: argparse.Namespace) -> None:
         print(f"No jobs matched search keyword '{args.search}'.")
         return
 
-    ranked = score_jobs_with_openai(jobs=jobs, resume_text=profile.text, model=args.model)
+    ranked = score_jobs_with_claude(jobs=jobs, resume_text=profile.text, model=args.model)
 
     print(f"Parsed skills: {', '.join(profile.skills) or 'None detected'}")
     print(f"Top {min(args.top, len(ranked))} jobs:\n")

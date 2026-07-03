@@ -19,7 +19,7 @@ class Config:
     limit_per_source: int = 25
     score_threshold: float = 35.0
     dedupe_hours: int = 24
-    model: str = "gpt-4.1-mini"
+    model: str = "claude-opus-4-8"
     tasklog_path: str = "tasklog.txt"
     profile_path: str = "profile.json"
     db_path: str = "job_agent.db"

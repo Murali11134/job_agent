@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Job Agent — Tell it about yourself</title>
+<style>
+  body { font-family: Georgia, serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem;
+         color: #2b2b2b; background: #faf8f4; }
+  h1 { font-size: 1.6rem; } h2 { font-size: 1.15rem; margin-top: 2rem; }
+  label { display: block; font-weight: bold; margin-top: 1rem; }
+  input, textarea { width: 100%; box-sizing: border-box; padding: 0.5rem; margin-top: 0.3rem;
+         border: 1px solid #bbb; border-radius: 6px; font: inherit; background: #fff; }
+  textarea { min-height: 220px; font-family: monospace; font-size: 0.9rem; }
+  button { margin-top: 1.2rem; padding: 0.6rem 1.4rem; font: inherit; font-weight: bold;
+         background: #2b2b2b; color: #faf8f4; border: 0; border-radius: 6px; cursor: pointer; }
+  pre { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 1rem;
+         white-space: pre-wrap; word-break: break-word; }
+  .hint { color: #666; font-size: 0.9rem; }
+  .privacy { background: #eef6ee; border-left: 4px solid #4a8f4a; padding: 0.6rem 1rem; }
+  .step { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 0.8rem 1rem;
+         margin: 0.8rem 0; }
+  a.digest { font-weight: bold; }
+</style>
+</head>
+<body>
+<h1>Job Agent &mdash; tell it about yourself</h1>
+<p>Describe your daily tasks and workload below. This page turns it into the
+configuration the agent needs to build your ATS resume and apply-ready packages
+every day. See today's job list here: <a class="digest" href="latest.html">morning digest &rarr;</a></p>
+
+<p class="privacy"><strong>Privacy:</strong> everything you type stays in your
+browser &mdash; this page sends nothing anywhere. Your personal details go into a
+private GitHub <em>secret</em>, never into the public repository.</p>
+
+<label for="name">Full name</label>
+<input id="name" placeholder="Your Name">
+
+<label for="email">Email (appears on your resume)</label>
+<input id="email" type="email" placeholder="you@example.com">
+
+<label for="phone">Phone (appears on your resume)</label>
+<input id="phone" placeholder="+91 ...">
+
+<label for="keywords">Job search keywords</label>
+<input id="keywords" placeholder="python developer">
+
+<label for="location">Job search location</label>
+<input id="location" placeholder="India">
+
+<label for="tasks">Everything about you &mdash; your daily tasks, workload, projects,
+education, achievements (free-form, your own words)</label>
+<textarea id="tasks" placeholder="- Built and maintained Python backend services with FastAPI and PostgreSQL
+- Analyzed product data with pandas and SQL
+- Deployed with Docker on AWS, fixed production issues
+- B.Tech in Computer Science, 2021"></textarea>
+
+<button onclick="generate()">Generate my setup</button>
+
+<div id="output" style="display:none">
+  <h2>Step 1 &mdash; save your personal details as a secret</h2>
+  <div class="step">
+    <p>Copy this into a repository secret named <code>TASKLOG</code>
+    (<em>Settings &rarr; Secrets and variables &rarr; Actions &rarr; New repository secret</em>):</p>
+    <pre id="tasklog"></pre>
+    <button onclick="copy('tasklog')">Copy TASKLOG</button>
+  </div>
+
+  <h2>Step 2 &mdash; update the search settings (safe to commit)</h2>
+  <div class="step">
+    <p>Replace the contents of <code>config.json</code> in the repository:</p>
+    <pre id="config"></pre>
+    <button onclick="copy('config')">Copy config.json</button>
+  </div>
+
+  <h2>Step 3 &mdash; done</h2>
+  <div class="step">
+    <p>Add an <code>ANTHROPIC_API_KEY</code> secret (and optional SMTP secrets for
+    the morning email). The agent runs every morning and publishes the list at
+    <a href="latest.html">latest.html</a>.</p>
+  </div>
+</div>
+
+<script>
+function generate() {
+  const val = id => document.getElementById(id).value.trim();
+  const tasklog = [val('name') || 'Your Name',
+                   [val('email'), val('phone')].filter(Boolean).join(' | '),
+                   '', val('tasks')].join('\n').trim() + '\n';
+  document.getElementById('tasklog').textContent = tasklog;
+
+  const config = {
+    keywords: val('keywords') || 'python developer',
+    location: val('location') || 'India',
+    sources: ['linkedin', 'naukri', 'iimjobs', 'cutshort'],
+    min_jobs_per_day: 10,
+    limit_per_source: 25,
+    score_threshold: 35.0,
+    dedupe_hours: 24,
+    model: 'claude-opus-4-8'
+  };
+  document.getElementById('config').textContent = JSON.stringify(config, null, 2);
+  document.getElementById('output').style.display = 'block';
+  document.getElementById('output').scrollIntoView({behavior: 'smooth'});
+}
+function copy(id) {
+  navigator.clipboard.writeText(document.getElementById(id).textContent);
+}
+</script>
+</body>
+</html>

@@ -1,11 +1,16 @@
-Murali Kedarisetty
-muralidharkedarisetty@gmail.com
+Your Name
+your.email@example.com
 
-Describe your daily tasks and workload below, in your own words.
-Replace these example lines with what you actually do each day:
+This file is a TEMPLATE - do not commit personal details to the repo.
+Put your real task log in the repository secret named TASKLOG instead
+(Settings -> Secrets and variables -> Actions -> New repository secret).
+The daily workflow uses the secret when it exists and only falls back to
+this file otherwise. You can generate the secret content with the
+profile-setup page published on GitHub Pages.
 
-- Built and maintained Python backend services with FastAPI and PostgreSQL
-- Wrote SQL queries and pandas pipelines to analyze product data
-- Deployed services with Docker on AWS, monitored and fixed production issues
-- Integrated OpenAI LLM APIs for text summarization features
-- Reviewed pull requests and mentored two junior developers
+Describe your daily tasks and workload in your own words, for example:
+
+- Built and maintained backend services with <your stack>
+- Analyzed data and wrote reports for <your team/product>
+- Deployed and monitored services, fixed production issues
+- Mentored teammates and reviewed their work
