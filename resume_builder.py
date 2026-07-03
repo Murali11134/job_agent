@@ -1,7 +1,7 @@
 """Build ATS-friendly resumes from a plain-text daily task log.
 
 The flow: the user keeps a free-form log of their daily tasks and workload.
-An LLM (OpenAI, optional) deciphers it into a structured profile, which is
+Claude (Anthropic API, optional) deciphers it into a structured profile, which is
 rendered as a single-column plain-text resume with standard section headings —
 the format applicant tracking systems parse most reliably. Each application
 gets a copy tailored to the job description, and every resume is linted with
@@ -19,9 +19,50 @@ from resume_parser import EMAIL_PATTERN, PHONE_PATTERN, KNOWN_SKILLS
 from scorer import _extract_json
 from scraper import Job
 
-DEFAULT_MODEL = "gpt-4.1-mini"
+DEFAULT_MODEL = "claude-opus-4-8"
 
 ATS_SECTIONS = ["SUMMARY", "SKILLS", "EXPERIENCE", "EDUCATION"]
+
+PROFILE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "name": {"type": "string"},
+        "email": {"type": "string"},
+        "phone": {"type": "string"},
+        "title": {"type": "string"},
+        "summary": {"type": "string"},
+        "skills": {"type": "array", "items": {"type": "string"}},
+        "experience": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "role": {"type": "string"},
+                    "organization": {"type": "string"},
+                    "bullets": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["role", "organization", "bullets"],
+                "additionalProperties": False,
+            },
+        },
+        "education": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": [
+        "name", "email", "phone", "title", "summary",
+        "skills", "experience", "education",
+    ],
+    "additionalProperties": False,
+}
+
+TAILOR_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string"},
+        "skills": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["summary", "skills"],
+    "additionalProperties": False,
+}
 
 STOPWORDS = {
     "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "has",
@@ -32,34 +73,32 @@ STOPWORDS = {
 }
 
 PROFILE_PROMPT = """You are a professional resume writer. Convert the user's
-daily task/workload log into a resume profile. Return ONLY JSON with keys:
-name (string), email (string), phone (string), title (string, a job title that
-fits the work described), summary (string, 2-3 sentences, third person, no
-pronouns), skills (array of strings, most relevant first), experience (array of
-objects with keys: role, organization, bullets - array of achievement-oriented
-bullet strings starting with action verbs, quantified where possible),
-education (array of strings). Use only facts present in the log; do not invent
-employers, dates, or credentials."""
+daily task/workload log into a resume profile. The title should be a job title
+that fits the work described; the summary is 2-3 sentences, third person, no
+pronouns; skills are ordered most relevant first; experience bullets are
+achievement-oriented, start with action verbs, and are quantified where
+possible. Use only facts present in the log; do not invent employers, dates,
+or credentials. Use an empty string or empty array for anything not present."""
 
 TAILOR_PROMPT = """You are an ATS optimization expert. Given a resume profile
-JSON and a job posting, return ONLY JSON with keys: summary (string rewritten
-to target this job), skills (array reordered/reworded so terms matching the job
-description come first - never invent skills not in the profile), bullets_hint
-(string, one sentence of advice). Keep it truthful to the original profile."""
+JSON and a job posting, rewrite the summary to target this job and reorder or
+reword the skills so terms matching the job description come first - never
+invent skills not in the profile. Keep it truthful to the original profile."""
 
 
-def _openai_json(system: str, user: str, model: str) -> dict:
-    from openai import OpenAI
+def _claude_json(system: str, user: str, schema: dict, model: str) -> dict:
+    import anthropic
 
-    client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-    response = client.responses.create(
+    client = anthropic.Anthropic()
+    response = client.messages.create(
         model=model,
-        input=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
+        max_tokens=4096,
+        system=system,
+        messages=[{"role": "user", "content": user}],
+        output_config={"format": {"type": "json_schema", "schema": schema}},
     )
-    return _extract_json(response.output_text)
+    text = next(block.text for block in response.content if block.type == "text")
+    return _extract_json(text)
 
 
 def _fallback_profile(tasklog: str) -> dict:
@@ -94,10 +133,10 @@ def _fallback_profile(tasklog: str) -> dict:
 def build_profile(tasklog: str, model: str = DEFAULT_MODEL) -> dict:
     """Decipher a daily task/workload log into a structured resume profile."""
 
-    if not os.getenv("OPENAI_API_KEY"):
+    if not os.getenv("ANTHROPIC_API_KEY"):
         return _fallback_profile(tasklog)
     try:
-        profile = _openai_json(PROFILE_PROMPT, tasklog, model)
+        profile = _claude_json(PROFILE_PROMPT, tasklog, PROFILE_SCHEMA, model)
     except Exception:
         return _fallback_profile(tasklog)
     for key, default in _fallback_profile(tasklog).items():
@@ -124,9 +163,9 @@ def tailor_profile(profile: dict, job: Job, model: str = DEFAULT_MODEL) -> dict:
 
     tailored = json.loads(json.dumps(profile))
 
-    if os.getenv("OPENAI_API_KEY"):
+    if os.getenv("ANTHROPIC_API_KEY"):
         try:
-            result = _openai_json(
+            result = _claude_json(
                 TAILOR_PROMPT,
                 json.dumps(
                     {
@@ -134,6 +173,7 @@ def tailor_profile(profile: dict, job: Job, model: str = DEFAULT_MODEL) -> dict:
                         "job": {"title": job.title, "description": job.description},
                     }
                 ),
+                TAILOR_SCHEMA,
                 model,
             )
             if result.get("summary"):

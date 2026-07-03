@@ -25,14 +25,23 @@ jobs:
           path: job_agent.db
           key: job-db-${{ github.run_id }}
           restore-keys: job-db-
-      - name: Build profile if missing
+      - name: Load personal task log from TASKLOG secret (if set)
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TASKLOG: ${{ secrets.TASKLOG }}
         run: |
-          if [ ! -f profile.json ]; then python main.py build-profile; fi
+          if [ -n "$TASKLOG" ]; then
+            printf '%s\n' "$TASKLOG" > tasklog.txt
+            echo "Using personal task log from the TASKLOG secret"
+          else
+            echo "TASKLOG secret not set; using the template tasklog.txt"
+          fi
+      - name: Build profile
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python main.py build-profile
       - name: Daily run
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
@@ -46,3 +55,30 @@ jobs:
           path: |
             digests/
             applications/
+      - name: Assemble public site (setup page + digest, no personal files)
+        run: |
+          mkdir -p _site
+          cp site/index.html _site/
+          cp digests/*.html _site/ 2>/dev/null || true
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  publish:
+    needs: daily
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

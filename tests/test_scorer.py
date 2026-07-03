@@ -1,7 +1,7 @@
 import unittest
 from unittest import mock
 
-from scorer import _extract_json, _fallback_score, score_jobs_with_openai
+from scorer import _extract_json, _fallback_score, score_jobs_with_claude
 from scraper import Job
 
 PYTHON_JOB = Job(
@@ -51,7 +51,7 @@ class ScoreJobsWithoutApiKeyTests(unittest.TestCase):
     @mock.patch.dict("os.environ", {}, clear=True)
     def test_falls_back_and_sorts_descending(self):
         resume = "Experienced python engineer using docker and aws."
-        ranked = score_jobs_with_openai([UNRELATED_JOB, PYTHON_JOB], resume)
+        ranked = score_jobs_with_claude([UNRELATED_JOB, PYTHON_JOB], resume)
         self.assertEqual(len(ranked), 2)
         self.assertEqual(ranked[0].job, PYTHON_JOB)
         self.assertGreaterEqual(ranked[0].score, ranked[1].score)

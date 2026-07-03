@@ -6,5 +6,5 @@
   "limit_per_source": 25,
   "score_threshold": 35.0,
   "dedupe_hours": 24,
-  "model": "gpt-4.1-mini"
+  "model": "claude-opus-4-8"
 }
