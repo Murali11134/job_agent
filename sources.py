@@ -59,8 +59,17 @@ def parse_naukri_results(payload: dict) -> List[Job]:
 
 def fetch_naukri(keywords: str, location: str, limit: int) -> List[Job]:
     session = _session()
-    # The public search API rejects requests without these client headers.
-    session.headers.update({"appid": "109", "systemid": "Naukri"})
+    # The public search API rejects requests without these client headers,
+    # and returns 406 Not Acceptable unless the Accept header asks for JSON.
+    session.headers.update(
+        {
+            "appid": "109",
+            "systemid": "Naukri",
+            "Accept": "application/json",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://www.naukri.com/",
+        }
+    )
     response = session.get(
         NAUKRI_SEARCH_URL,
         params={
