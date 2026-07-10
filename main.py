@@ -10,6 +10,7 @@ Commands:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -62,12 +63,23 @@ def _slug(text: str, max_length: int = 60) -> str:
     return re.sub(r"[^a-zA-Z0-9]+", "-", text).strip("-").lower()[:max_length]
 
 
+def _resume_filename(title: str, company: str, job_key: str) -> str:
+    """Return a readable filename with a stable collision-resistant suffix."""
+
+    title_slug = _slug(title) or "job"
+    company_slug = _slug(company) or "company"
+    identity = hashlib.sha256(job_key.encode("utf-8")).hexdigest()[:10]
+    return f"{title_slug}--{company_slug}--{identity}.txt"
+
+
 def cmd_build_profile(args: argparse.Namespace, config: Config) -> None:
     tasklog_path = Path(args.tasklog or config.tasklog_path)
     try:
         tasklog = tasklog_path.read_text(encoding="utf-8")
     except OSError as error:
-        print(f"Error: could not read task log '{tasklog_path}': {error}", file=sys.stderr)
+        print(
+            f"Error: could not read task log '{tasklog_path}': {error}", file=sys.stderr
+        )
         raise SystemExit(1)
 
     profile = build_profile(tasklog, model=config.model)
@@ -117,38 +129,58 @@ def cmd_run(args: argparse.Namespace, config: Config) -> None:
 
     store = JobStore(config.db_path)
     try:
-        fresh = store.filter_unseen(jobs, within_hours=config.dedupe_hours)
+        fresh = store.filter_unseen(
+            jobs,
+            within_hours=config.dedupe_hours,
+            limit=config.max_jobs_to_score,
+        )
         print(f"{len(fresh)} new (not seen in the last {config.dedupe_hours}h)")
 
+        if len(fresh) == config.max_jobs_to_score and len(jobs) > len(fresh):
+            print(
+                f"Scoring capped at {config.max_jobs_to_score} jobs "
+                "to control API cost; untouched jobs can be considered next run."
+            )
         ranked = score_jobs_with_claude(fresh, resume_text, model=config.model)
         suitable = [item for item in ranked if item.score >= config.score_threshold]
-        selected = (
-            suitable
-            if len(suitable) >= config.min_jobs_per_day
-            else ranked[: config.min_jobs_per_day]
-        )
-        selected = selected[: max(config.min_jobs_per_day, len(suitable))]
+        selected = suitable[: config.max_applications_per_run]
+        if len(selected) < config.min_jobs_per_day:
+            selected_keys = {item.job.key for item in selected}
+            selected.extend(
+                item for item in ranked if item.job.key not in selected_keys
+            )
+            selected = selected[: config.min_jobs_per_day]
 
         today = date.today().isoformat()
         out_dir = Path(config.applications_dir) / today
         out_dir.mkdir(parents=True, exist_ok=True)
 
+        current_applications = []
         for item in selected:
             tailored = tailor_profile(profile, item.job, model=config.model)
             resume = render_resume(tailored)
             report = ats_check(resume, item.job.description)
-            resume_path = out_dir / f"{_slug(item.job.title)}--{_slug(item.job.company) or 'company'}.txt"
-            resume_path.write_text(resume, encoding="utf-8")
-            store.record_application(
-                item.job, item.score, item.reason, str(resume_path), report["coverage"]
+            resume_path = out_dir / _resume_filename(
+                item.job.title, item.job.company, item.job.key
             )
-
-        applications = store.applications_since(hours=24)
+            resume_path.write_text(resume, encoding="utf-8")
+            current_applications.append(
+                store.record_application(
+                    item.job,
+                    item.score,
+                    item.reason,
+                    str(resume_path),
+                    report["coverage"],
+                )
+            )
     finally:
         store.close()
 
     digest = build_digest(
-        today, applications, source_errors=errors, min_jobs=config.min_jobs_per_day
+        today,
+        current_applications,
+        source_errors=errors,
+        min_jobs=config.min_jobs_per_day,
     )
     digest_dir = Path(config.digest_dir)
     digest_dir.mkdir(parents=True, exist_ok=True)
@@ -156,7 +188,10 @@ def cmd_run(args: argparse.Namespace, config: Config) -> None:
     digest_path.write_text(digest, encoding="utf-8")
 
     digest_html = build_digest_html(
-        today, applications, source_errors=errors, min_jobs=config.min_jobs_per_day
+        today,
+        current_applications,
+        source_errors=errors,
+        min_jobs=config.min_jobs_per_day,
     )
     (digest_dir / f"{today}.html").write_text(digest_html, encoding="utf-8")
     (digest_dir / "latest.html").write_text(digest_html, encoding="utf-8")
@@ -170,7 +205,10 @@ def cmd_match(args: argparse.Namespace) -> None:
     try:
         profile = parse_resume(args.resume)
     except OSError as error:
-        print(f"Error: could not read resume file '{args.resume}': {error}", file=sys.stderr)
+        print(
+            f"Error: could not read resume file '{args.resume}': {error}",
+            file=sys.stderr,
+        )
         raise SystemExit(1)
 
     jobs = scrape_jobs(search=args.search, limit=args.limit)
@@ -178,7 +216,9 @@ def cmd_match(args: argparse.Namespace) -> None:
         print(f"No jobs matched search keyword '{args.search}'.")
         return
 
-    ranked = score_jobs_with_claude(jobs=jobs, resume_text=profile.text, model=args.model)
+    ranked = score_jobs_with_claude(
+        jobs=jobs, resume_text=profile.text, model=args.model
+    )
 
     print(f"Parsed skills: {', '.join(profile.skills) or 'None detected'}")
     print(f"Top {min(args.top, len(ranked))} jobs:\n")
@@ -191,7 +231,11 @@ def cmd_match(args: argparse.Namespace) -> None:
 
 def main() -> None:
     args = build_parser().parse_args()
-    config = load_config(args.config)
+    try:
+        config = load_config(args.config)
+    except (OSError, json.JSONDecodeError, ValueError) as error:
+        print(f"Error: invalid configuration '{args.config}': {error}", file=sys.stderr)
+        raise SystemExit(2)
 
     if args.command == "build-profile":
         cmd_build_profile(args, config)

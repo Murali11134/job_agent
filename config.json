@@ -6,5 +6,7 @@
   "limit_per_source": 25,
   "score_threshold": 35.0,
   "dedupe_hours": 24,
+  "max_jobs_to_score": 50,
+  "max_applications_per_run": 10,
   "model": "claude-opus-4-8"
 }

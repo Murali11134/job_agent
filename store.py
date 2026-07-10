@@ -60,10 +60,16 @@ class JobStore:
     def close(self) -> None:
         self._conn.close()
 
-    def filter_unseen(self, jobs: List[Job], within_hours: int = 24) -> List[Job]:
+    def filter_unseen(
+        self,
+        jobs: List[Job],
+        within_hours: int = 24,
+        limit: int | None = None,
+    ) -> List[Job]:
         """Drop jobs already seen within the window; mark the rest as seen now.
 
-        A job that reappears after the window is treated as new again.
+        A job that reappears after the window is treated as new again. When a
+        limit is supplied, later jobs are left untouched for a future run.
         """
 
         now = _utcnow()
@@ -71,6 +77,8 @@ class JobStore:
         fresh: List[Job] = []
 
         for job in jobs:
+            if limit is not None and len(fresh) >= limit:
+                break
             row = self._conn.execute(
                 "SELECT last_seen FROM seen_jobs WHERE job_key = ?", (job.key,)
             ).fetchone()
@@ -106,7 +114,8 @@ class JobStore:
         reason: str,
         resume_path: str,
         ats_coverage: float,
-    ) -> None:
+    ) -> ApplicationRecord:
+        prepared_at = _utcnow().isoformat()
         self._conn.execute(
             """
             INSERT INTO applications
@@ -122,10 +131,21 @@ class JobStore:
                 reason,
                 resume_path,
                 ats_coverage,
-                _utcnow().isoformat(),
+                prepared_at,
             ),
         )
         self._conn.commit()
+        return ApplicationRecord(
+            job_key=job.key,
+            title=job.title,
+            company=job.company,
+            url=job.url,
+            score=score,
+            reason=reason,
+            resume_path=resume_path,
+            ats_coverage=ats_coverage,
+            prepared_at=prepared_at,
+        )
 
     def applications_since(self, hours: int = 24) -> List[ApplicationRecord]:
         cutoff = (_utcnow() - timedelta(hours=hours)).isoformat()

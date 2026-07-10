@@ -50,6 +50,25 @@ class OfflineProfileTests(unittest.TestCase):
         self.assertEqual(sorted(tailored["skills"]), sorted(profile["skills"]))
 
 
+class TruthfulTailoringTests(unittest.TestCase):
+    @mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test"}, clear=True)
+    @mock.patch("resume_builder._claude_json")
+    def test_rejects_invented_and_duplicate_skills(self, claude_json):
+        claude_json.return_value = {
+            "skills": ["Kubernetes", "SQL", "SQL"],
+        }
+        profile = {
+            "summary": "Data engineer with production experience.",
+            "skills": ["Python", "SQL"],
+        }
+        job = Job("Data Engineer", "Acme", "SQL and Kubernetes", "https://example.com")
+
+        tailored = tailor_profile(profile, job)
+
+        self.assertEqual(tailored["skills"], ["SQL", "Python"])
+        self.assertEqual(tailored["summary"], profile["summary"])
+
+
 class AtsCheckTests(unittest.TestCase):
     def test_full_coverage_when_keywords_present(self):
         resume = "SUMMARY\npython dev a@b.com\nSKILLS\npython\nEXPERIENCE\nEDUCATION"

@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import warnings
 from typing import List
 
 from resume_parser import EMAIL_PATTERN, PHONE_PATTERN, KNOWN_SKILLS
@@ -48,8 +49,14 @@ PROFILE_SCHEMA = {
         "education": {"type": "array", "items": {"type": "string"}},
     },
     "required": [
-        "name", "email", "phone", "title", "summary",
-        "skills", "experience", "education",
+        "name",
+        "email",
+        "phone",
+        "title",
+        "summary",
+        "skills",
+        "experience",
+        "education",
     ],
     "additionalProperties": False,
 }
@@ -57,19 +64,60 @@ PROFILE_SCHEMA = {
 TAILOR_SCHEMA = {
     "type": "object",
     "properties": {
-        "summary": {"type": "string"},
         "skills": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["summary", "skills"],
+    "required": ["skills"],
     "additionalProperties": False,
 }
 
 STOPWORDS = {
-    "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "has",
-    "have", "in", "is", "it", "its", "of", "on", "or", "our", "that", "the",
-    "their", "them", "they", "this", "to", "we", "will", "with", "you",
-    "your", "who", "what", "job", "role", "work", "team", "years", "must",
-    "should", "strong", "good", "ability", "experience", "skills", "etc",
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "by",
+    "for",
+    "from",
+    "has",
+    "have",
+    "in",
+    "is",
+    "it",
+    "its",
+    "of",
+    "on",
+    "or",
+    "our",
+    "that",
+    "the",
+    "their",
+    "them",
+    "they",
+    "this",
+    "to",
+    "we",
+    "will",
+    "with",
+    "you",
+    "your",
+    "who",
+    "what",
+    "job",
+    "role",
+    "work",
+    "team",
+    "years",
+    "must",
+    "should",
+    "strong",
+    "good",
+    "ability",
+    "experience",
+    "skills",
+    "etc",
 }
 
 PROFILE_PROMPT = """You are a professional resume writer. Convert the user's
@@ -81,9 +129,9 @@ possible. Use only facts present in the log; do not invent employers, dates,
 or credentials. Use an empty string or empty array for anything not present."""
 
 TAILOR_PROMPT = """You are an ATS optimization expert. Given a resume profile
-JSON and a job posting, rewrite the summary to target this job and reorder or
-reword the skills so terms matching the job description come first - never
-invent skills not in the profile. Keep it truthful to the original profile."""
+JSON and a job posting, return the exact skills already present in the profile,
+reordered so terms matching the job description come first. Do not add, remove,
+rename, or reword any skill. The application enforces this rule in code."""
 
 
 def _claude_json(system: str, user: str, schema: dict, model: str) -> dict:
@@ -114,7 +162,11 @@ def _fallback_profile(tasklog: str) -> dict:
         if len(line.strip()) > 20 and not EMAIL_PATTERN.search(line)
     ][:12]
     first_line = tasklog.strip().splitlines()[0].strip() if tasklog.strip() else ""
-    name = first_line if first_line and "@" not in first_line and len(first_line) < 60 else ""
+    name = (
+        first_line
+        if first_line and "@" not in first_line and len(first_line) < 60
+        else ""
+    )
 
     return {
         "name": name,
@@ -137,10 +189,26 @@ def build_profile(tasklog: str, model: str = DEFAULT_MODEL) -> dict:
         return _fallback_profile(tasklog)
     try:
         profile = _claude_json(PROFILE_PROMPT, tasklog, PROFILE_SCHEMA, model)
-    except Exception:
+    except Exception as error:
+        warnings.warn(
+            f"Claude profile generation failed; using local fallback: {error}",
+            RuntimeWarning,
+            stacklevel=2,
+        )
         return _fallback_profile(tasklog)
-    for key, default in _fallback_profile(tasklog).items():
+    fallback = _fallback_profile(tasklog)
+    for key, default in fallback.items():
         profile.setdefault(key, default)
+    # Contact details must be copied exactly from the source log. Skills are
+    # retained only when their complete text is present in the source material.
+    profile["email"] = fallback["email"]
+    profile["phone"] = fallback["phone"]
+    source = tasklog.casefold()
+    profile["skills"] = [
+        str(skill)
+        for skill in profile.get("skills", [])
+        if str(skill).strip() and str(skill).casefold() in source
+    ]
     return profile
 
 
@@ -176,13 +244,27 @@ def tailor_profile(profile: dict, job: Job, model: str = DEFAULT_MODEL) -> dict:
                 TAILOR_SCHEMA,
                 model,
             )
-            if result.get("summary"):
-                tailored["summary"] = str(result["summary"])
             if isinstance(result.get("skills"), list) and result["skills"]:
-                tailored["skills"] = [str(skill) for skill in result["skills"]]
+                originals = [str(skill) for skill in profile.get("skills", [])]
+                by_normalized = {skill.casefold(): skill for skill in originals}
+                reordered = []
+                seen = set()
+                for candidate in result["skills"]:
+                    normalized = str(candidate).casefold()
+                    if normalized in by_normalized and normalized not in seen:
+                        reordered.append(by_normalized[normalized])
+                        seen.add(normalized)
+                reordered.extend(
+                    skill for skill in originals if skill.casefold() not in seen
+                )
+                tailored["skills"] = reordered
             return tailored
-        except Exception:
-            pass
+        except Exception as error:
+            warnings.warn(
+                f"Claude resume tailoring failed; using local fallback: {error}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
 
     # Offline tailoring: float skills mentioned by the job to the front.
     wanted = set(job_keywords(f"{job.title} {job.description}"))
