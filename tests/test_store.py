@@ -36,13 +36,29 @@ class JobStoreTests(unittest.TestCase):
         self.store._set_last_seen(JOB.key, stale)
         self.assertEqual(self.store.filter_unseen([JOB]), [JOB])
 
+    def test_limit_leaves_later_jobs_for_the_next_run(self):
+        second = Job(
+            title="SQL Engineer",
+            company="Beta",
+            description="sql",
+            url="https://example.com/jobs/2",
+            job_id="222",
+            source="linkedin",
+        )
+        self.assertEqual(self.store.filter_unseen([JOB, second], limit=1), [JOB])
+        self.assertEqual(self.store.filter_unseen([JOB, second], limit=1), [second])
+
     def test_dedup_key_prefers_source_and_job_id(self):
         self.assertEqual(JOB.key, "linkedin:111")
         dummy = Job(title="T", company="C", description="", url="u")
         self.assertEqual(dummy.key, "t|c")
 
     def test_applications_recorded_and_listed(self):
-        self.store.record_application(JOB, 88.0, "great fit", "applications/x.txt", 75.0)
+        recorded = self.store.record_application(
+            JOB, 88.0, "great fit", "applications/x.txt", 75.0
+        )
+        self.assertEqual(recorded.job_key, JOB.key)
+        self.assertEqual(recorded.score, 88.0)
         apps = self.store.applications_since(hours=24)
         self.assertEqual(len(apps), 1)
         self.assertEqual(apps[0].title, "Python Engineer")

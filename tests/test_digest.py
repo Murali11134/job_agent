@@ -26,6 +26,7 @@ class BuildDigestTests(unittest.TestCase):
         self.assertIn("https://example.com/jobs/1", digest)
         self.assertIn("80/100", digest)
         self.assertIn("72%", digest)
+        self.assertNotIn("applications/", digest)
 
     def test_warns_when_below_daily_target(self):
         digest = build_digest("2026-07-02", [_record()], min_jobs=10)
@@ -50,12 +51,20 @@ class BuildDigestHtmlTests(unittest.TestCase):
         self.assertIn("Python Engineer", page)
         self.assertIn('href="https://example.com/jobs/1"', page)
         self.assertIn("80/100", page)
+        self.assertNotIn("applications/", page)
 
     def test_escapes_html_in_job_fields(self):
         record = _record(title="<script>alert(1)</script>")
         page = build_digest_html("2026-07-02", [record], min_jobs=1)
         self.assertNotIn("<script>alert(1)</script>", page)
         self.assertIn("&lt;script&gt;", page)
+
+    def test_rejects_non_web_apply_url(self):
+        record = _record()
+        record.url = "javascript:alert(1)"
+        page = build_digest_html("2026-07-02", [record], min_jobs=1)
+        self.assertIn('href="#"', page)
+        self.assertNotIn("javascript:", page)
 
     def test_includes_source_warnings(self):
         page = build_digest_html(

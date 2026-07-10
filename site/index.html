@@ -27,11 +27,13 @@
 <h1>Job Agent &mdash; tell it about yourself</h1>
 <p>Describe your daily tasks and workload below. This page turns it into the
 configuration the agent needs to build your ATS resume and apply-ready packages
-every day. See today's job list here: <a class="digest" href="latest.html">morning digest &rarr;</a></p>
+every day. If you explicitly enabled public publishing, see today's job list here:
+<a class="digest" href="latest.html">morning digest &rarr;</a></p>
 
 <p class="privacy"><strong>Privacy:</strong> everything you type stays in your
 browser &mdash; this page sends nothing anywhere. Your personal details go into a
-private GitHub <em>secret</em>, never into the public repository.</p>
+private GitHub <em>secret</em>, never into the public repository. Resume files
+are never uploaded unencrypted.</p>
 
 <label for="name">Full name</label>
 <input id="name" placeholder="Your Name">
@@ -76,8 +78,10 @@ education, achievements (free-form, your own words)</label>
   <h2>Step 3 &mdash; done</h2>
   <div class="step">
     <p>Add an <code>ANTHROPIC_API_KEY</code> secret (and optional SMTP secrets for
-    the morning email). The agent runs every morning and publishes the list at
-    <a href="latest.html">latest.html</a>.</p>
+    the morning email). For an encrypted downloadable archive, also add a strong
+    <code>RESUME_ARCHIVE_PASSWORD</code> secret. Public digest publishing remains
+    disabled unless you deliberately set the repository variable
+    <code>PUBLISH_DIGEST</code> to <code>true</code>.</p>
   </div>
 </div>
 
@@ -97,6 +101,8 @@ function generate() {
     limit_per_source: 25,
     score_threshold: 35.0,
     dedupe_hours: 24,
+    max_jobs_to_score: 50,
+    max_applications_per_run: 10,
     model: 'claude-opus-4-8'
   };
   document.getElementById('config').textContent = JSON.stringify(config, null, 2);

@@ -7,6 +7,7 @@ import os
 import smtplib
 from email.message import EmailMessage
 from typing import Dict, List
+from urllib.parse import urlparse
 
 from store import ApplicationRecord
 
@@ -21,6 +22,13 @@ h1 { font-size: 1.5rem; } h2 { font-size: 1.1rem; margin-bottom: 0.2rem; }
 .warn { background: #fff6e0; border-left: 4px solid #d9a521; padding: 0.6rem 1rem; }
 footer { color: #888; font-size: 0.85rem; margin-top: 2rem; }
 """
+
+
+def _safe_web_url(value: str) -> str:
+    """Allow only ordinary web links in the public digest."""
+
+    parsed = urlparse(value)
+    return value if parsed.scheme in {"http", "https"} and parsed.netloc else "#"
 
 
 def build_digest(
@@ -48,12 +56,12 @@ def build_digest(
     for index, app in enumerate(applications, start=1):
         lines.extend(
             [
-                f"## {index}. {app.title}" + (f" @ {app.company}" if app.company else ""),
+                f"## {index}. {app.title}"
+                + (f" @ {app.company}" if app.company else ""),
                 f"- Match score: {app.score:.0f}/100",
                 f"- ATS keyword coverage: {app.ats_coverage:.0f}%",
                 f"- Why: {app.reason}",
                 f"- Apply: {app.url}",
-                f"- Tailored resume: `{app.resume_path}`",
                 "",
             ]
         )
@@ -99,9 +107,7 @@ def build_digest_html(
             f"<h2>{index}. {esc(app.title)}{company}</h2>"
             f'<div class="meta">Match {app.score:.0f}/100 &middot; '
             f"ATS coverage {app.ats_coverage:.0f}% &middot; {esc(app.reason)}</div>"
-            f'<a class="apply" href="{esc(app.url)}">Apply &rarr;</a>'
-            f'<div class="meta">Tailored resume: <code>{esc(app.resume_path)}</code> '
-            "(workflow artifact)</div>"
+            f'<a class="apply" href="{esc(_safe_web_url(app.url))}">Apply &rarr;</a>'
             "</div>"
         )
 
@@ -110,7 +116,9 @@ def build_digest_html(
             f"<li><code>{esc(source)}</code>: {esc(error)}</li>"
             for source, error in source_errors.items()
         )
-        parts.append(f'<div class="warn"><strong>Source warnings</strong><ul>{items}</ul></div>')
+        parts.append(
+            f'<div class="warn"><strong>Source warnings</strong><ul>{items}</ul></div>'
+        )
 
     parts.append(
         "<footer>Resumes are tailored and ATS-linted. Review each package and "

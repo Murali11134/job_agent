@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import warnings
 from dataclasses import dataclass
 from typing import List
 
@@ -15,7 +16,12 @@ DEFAULT_MODEL = "claude-opus-4-8"
 SCORE_SCHEMA = {
     "type": "object",
     "properties": {
-        "score": {"type": "number", "description": "Match score from 0 to 100"},
+        "score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Match score from 0 to 100",
+        },
         "reason": {"type": "string", "description": "One-sentence justification"},
     },
     "required": ["score", "reason"],
@@ -51,9 +57,7 @@ def _fallback_score(job: Job, resume_text: str) -> ScoredJob:
     job_words = set(f"{job.title} {job.description}".lower().split())
     overlap = resume_words.intersection(job_words)
     score = min(100.0, 15.0 + len(overlap) * 5.0)
-    reason = (
-        f"Fallback score using keyword overlap ({len(overlap)} shared terms)."
-    )
+    reason = f"Fallback score using keyword overlap ({len(overlap)} shared terms)."
     return ScoredJob(job=job, score=score, reason=reason)
 
 
@@ -96,7 +100,9 @@ def score_jobs_with_claude(
                 max_tokens=1024,
                 system=SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": json.dumps(payload)}],
-                output_config={"format": {"type": "json_schema", "schema": SCORE_SCHEMA}},
+                output_config={
+                    "format": {"type": "json_schema", "schema": SCORE_SCHEMA}
+                },
             )
             text = next(
                 block.text for block in response.content if block.type == "text"
@@ -105,11 +111,16 @@ def score_jobs_with_claude(
             scored.append(
                 ScoredJob(
                     job=job,
-                    score=float(result.get("score", 0)),
+                    score=max(0.0, min(100.0, float(result.get("score", 0)))),
                     reason=str(result.get("reason", "No reason returned.")),
                 )
             )
-        except Exception:
+        except Exception as error:
+            warnings.warn(
+                f"Claude scoring failed for {job.title!r}; using keyword fallback: {error}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
             scored.append(_fallback_score(job, resume_text))
 
     return sorted(scored, key=lambda item: item.score, reverse=True)

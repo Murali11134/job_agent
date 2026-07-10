@@ -4,8 +4,8 @@ Describe your daily tasks and workload in plain text — the agent (powered by
 **Claude / Anthropic API**) deciphers it, builds an ATS-friendly resume,
 scrapes jobs from **LinkedIn, Naukri, IIMJobs, and Cutshort**, skips anything
 already seen in the last **24 hours**, prepares tailored application packages
-for at least **10 suitable jobs a day**, and publishes the list every morning
-at a **URL** (GitHub Pages) and optionally by email.
+for up to **10 suitable jobs a day**, and optionally delivers the list by email,
+an encrypted workflow artifact, or an explicitly enabled public GitHub Pages URL.
 
 Requires Python 3.10+.
 
@@ -18,7 +18,7 @@ job boards ──scrape──▶ dedupe (<24h seen? skip) ──score──▶ t
                                         │
                       tailored ATS resume per job + ATS lint
                                         │
-        https://<user>.github.io/job_agent/latest.html  +  optional email
+      optional email / encrypted archive / explicitly public GitHub Pages
 ```
 
 | Module | Role |
@@ -34,27 +34,45 @@ job boards ──scrape──▶ dedupe (<24h seen? skip) ──score──▶ t
 
 ## Set up (one time)
 
-Your personal details never go into the repository — they live in private
-GitHub Actions secrets:
+Your personal details never go into the repository — they live in GitHub
+Actions secrets. Generated resumes are never uploaded in plaintext:
 
-1. Open the setup page: `https://<your-username>.github.io/job_agent/`
-   (published automatically by the daily workflow; run it once manually from
-   the Actions tab to create the site). Fill in **everything about yourself**
-   — daily tasks, projects, education, contact — and it generates your setup.
+1. Prepare a plain-text task log containing **everything about yourself** —
+   daily tasks, projects, education, and contact details. You can generate it
+   locally with `site/index.html`. If you deliberately enabled public Pages,
+   the same browser-only generator is available at
+   `https://<your-username>.github.io/job_agent/`; it sends nothing anywhere.
 2. Add repository secrets (*Settings → Secrets and variables → Actions*):
    - `TASKLOG` — your personal task log (from the setup page)
    - `ANTHROPIC_API_KEY` — for resume building, tailoring, and scoring
      (offline fallbacks run without it, with lower quality)
+   - Optional encrypted download: `RESUME_ARCHIVE_PASSWORD` — use a strong,
+     unique password. The workflow encrypts resumes and digests with AES-256 and
+     PBKDF2 key derivation, then keeps the encrypted artifact for seven days.
    - Optional email: `SMTP_HOST`, `SMTP_PORT` (587), `SMTP_USER`,
      `SMTP_PASSWORD` (a Gmail [app password](https://support.google.com/accounts/answer/185833)),
      `DIGEST_TO`
 3. Commit the generated `config.json` (keywords/location only — nothing personal).
+4. Optional public page: create a repository **variable** named
+   `PUBLISH_DIGEST` with value `true`. This deliberately makes job titles,
+   companies, scores, and apply links public. Leave it unset for private use.
 
 The workflow runs daily at **08:00 IST** (edit the cron in
-`.github/workflows/daily.yml`) and publishes the morning list at
-`https://<your-username>.github.io/job_agent/latest.html`.
-Tailored resumes (which contain your contact details) are **not** published to
-the public site — they are uploaded as a private workflow artifact.
+`.github/workflows/daily.yml`). If public publishing is enabled, the morning list
+appears at `https://<your-username>.github.io/job_agent/latest.html`.
+Tailored resumes contain contact details and are never published or uploaded in
+plaintext. When `RESUME_ARCHIVE_PASSWORD` is configured, they are included only
+inside the encrypted seven-day artifact.
+
+Decrypt a downloaded artifact with OpenSSL, then extract it:
+
+```bash
+export RESUME_ARCHIVE_PASSWORD='your-strong-password'
+openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+  -pass env:RESUME_ARCHIVE_PASSWORD \
+  -in private-daily-output.tar.gz.enc -out private-daily-output.tar.gz
+tar -xzf private-daily-output.tar.gz
+```
 
 ## Run locally
 
@@ -67,12 +85,13 @@ python main.py run                    # or: python main.py run --offline (dry ru
 ```
 
 Each run writes tailored resumes to `applications/<date>/` and the morning
-list to `digests/<date>.md` + `.html`.
+list to `digests/<date>.md` + `.html`. Claude output may reorder existing skills,
+but the code rejects invented or renamed skills.
 
 ## What "apply" means here (please read)
 
 The agent prepares everything **up to** submission: per-job tailored,
-ATS-linted resume + direct apply link, at least 10 per day. It does **not**
+ATS-linted resume + direct apply link, up to the configured daily maximum. It does **not**
 click "apply" for you — automated submission bots violate LinkedIn's (and most
 boards') terms of service and commonly get accounts restricted. The morning
 digest is designed so each application takes under a minute to submit.
